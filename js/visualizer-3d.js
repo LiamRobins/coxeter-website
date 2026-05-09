@@ -236,10 +236,10 @@ Visualizer3D.prototype._addChamberLabel = function (elem, triPts) {
   var inPlaneRight = new THREE.Vector3().crossVectors(inPlaneUp, faceNormal).normalize();
 
   // Plane geometry: small square slightly above the face surface
-  var size = 0.18;
+  var size = 0.22;
   var planeGeom = new THREE.PlaneGeometry(size, size);
   var canvas = makeTextCanvas(plainLabel(elem.label), {
-    size: 256, font: 'bold 80px Georgia, serif', color: '#1c3d5a',
+    size: 256, font: 'bold 96px Georgia, serif', color: '#1c3d5a',
   });
   var tex = new THREE.CanvasTexture(canvas);
   tex.minFilter = THREE.LinearFilter;

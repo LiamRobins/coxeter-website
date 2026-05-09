@@ -23,7 +23,7 @@ function matrixLatex(entries, dim) {
 }
 
 // Render a group element label as KaTeX.
-// D_n: stored as "r_{0}" or "f_{3}" → already valid LaTeX.
+// D_n: stored as "e", "r", "r^{2}", "f", "rf", "r^{3}f" → already valid LaTeX.
 // S_n: stored as "3412" → render as plain text in math mode.
 // B_n: stored as "\\overline{1}2" → already valid LaTeX.
 function elemLabelLatex(label) {
@@ -173,7 +173,12 @@ document.addEventListener('DOMContentLoaded', function () {
   var n_poly = G.elements.length / 2;
 
   if (config.family === 'dihedral') {
-    viz = new Visualizer2D(vizContainer, G, { family: 'dihedral', n: n_poly });
+    // Axis labels mirror the reflection-element labels (f, rf, r^{2}f, ...).
+    var dAxisLabels = G.reflections.map(function (r) { return r.label; });
+    viz = new Visualizer2D(vizContainer, G, {
+      family: 'dihedral', n: n_poly,
+      axisLabels: dAxisLabels
+    });
   } else if (config.family === 'symmetric' && n === 3) {
     var sVertexLabels = Array.from({length: n}, function (_, i) { return String(i + 1); });
     var sAxisLabels = [];

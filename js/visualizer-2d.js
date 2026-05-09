@@ -1,47 +1,52 @@
 (function () {
 'use strict';
 
-// ── Unicode subscript helper ──────────────────────────────────────────────────
-function toSub(n) {
-  return String(n).split('').map(function (d) {
-    return String.fromCharCode(0x2080 + parseInt(d));
-  }).join('');
-}
-
-// Convert a stored label to plain text for SVG (D_n and S_n only — no overlines).
-function labelToSVGText(label) {
-  // D_n: r_{k}, r_k, f_{k} — braces are optional
-  return label.replace(/([rf])_\{?(\d+)\}?/g, function (_, letter, digits) {
-    return letter + toSub(digits);
-  });
-}
-
-// Set the text content of an SVG <text> element, correctly rendering overlines
-// via <tspan text-decoration="overline"> rather than combining Unicode characters.
-// Works for all families: D_n (subscripts), S_n (plain digits), B_n (overlines).
+// Set the text content of an SVG <text> element, rendering:
+//   - B_n overlines via <tspan text-decoration="overline">
+//   - D_n superscripts (e.g. r^{2}f) via <tspan baseline-shift="super">
+//   - everything else as plain text (S_n digits, the bare letters e/r/f, etc.)
 function applyLabel(textEl, label) {
-  // Remove existing children
   while (textEl.firstChild) textEl.removeChild(textEl.firstChild);
 
-  if (label.indexOf('\\overline') === -1) {
-    // No overlines: convert subscripts and set as plain text
-    textEl.textContent = labelToSVGText(label);
+  if (label.indexOf('\\overline') !== -1) {
+    var parts = label.split(/(\\overline\{\w+\})/);
+    parts.forEach(function (part) {
+      var m = part.match(/^\\overline\{(\w+)\}$/);
+      if (m) {
+        var tspan = document.createElementNS(SVG_NS, 'tspan');
+        tspan.setAttribute('text-decoration', 'overline');
+        tspan.textContent = m[1];
+        textEl.appendChild(tspan);
+      } else if (part) {
+        textEl.appendChild(document.createTextNode(part));
+      }
+    });
     return;
   }
 
-  // Split on \overline{...} tokens and build tspan elements for overlined parts
-  var parts = label.split(/(\\overline\{\w+\})/);
-  parts.forEach(function (part) {
-    var m = part.match(/^\\overline\{(\w+)\}$/);
-    if (m) {
-      var tspan = document.createElementNS(SVG_NS, 'tspan');
-      tspan.setAttribute('text-decoration', 'overline');
-      tspan.textContent = m[1];
-      textEl.appendChild(tspan);
-    } else if (part) {
-      textEl.appendChild(document.createTextNode(part));
+  if (label.indexOf('^{') !== -1) {
+    var i = 0;
+    while (i < label.length) {
+      var nextSup = label.indexOf('^{', i);
+      if (nextSup === -1) {
+        textEl.appendChild(document.createTextNode(label.substring(i)));
+        break;
+      }
+      if (nextSup > i) {
+        textEl.appendChild(document.createTextNode(label.substring(i, nextSup)));
+      }
+      var end = label.indexOf('}', nextSup + 2);
+      var sup = document.createElementNS(SVG_NS, 'tspan');
+      sup.setAttribute('baseline-shift', 'super');
+      sup.setAttribute('font-size', '70%');
+      sup.textContent = label.substring(nextSup + 2, end);
+      textEl.appendChild(sup);
+      i = end + 1;
     }
-  });
+    return;
+  }
+
+  textEl.textContent = label;
 }
 
 // ── Highlight computation ─────────────────────────────────────────────────────
@@ -305,36 +310,48 @@ Visualizer2D.prototype._build = function (container, W, H) {
     });
   }
 
-  // ── Axis labels (e.g. "12","13","23" for S_3) ──
-  // Edge-midpoint axes (one or both endpoints at edge-midpoint radius):
-  //   place label just OUTSIDE the polygon past the nearest endpoint.
-  // Vertex-through axes (both endpoints at vertex radius R):
-  //   place label INSIDE the polygon near the "positive" vertex (the one
-  //   with the smaller boundary index, i.e. earlier in the CCW vertex order).
+  // ── Axis labels ──
+  // Two placement strategies:
+  //   - dihedral: uniform rule — every label sits just outside the polygon
+  //     past ax.p1 (the smaller-index endpoint), at scale 1.2.
+  //   - other 2D families (S_3, B_2): edge-midpoint axes get the label
+  //     outside past the closer endpoint; vertex-through axes get the label
+  //     inside near the smaller-boundary-index vertex.
   if (options.axisLabels) {
     var rMid = self._R * Math.cos(Math.PI / options.n);
     geo.reflAxes.forEach(function (ax, j) {
       var lbl = options.axisLabels[j];
       if (!lbl) return;
-      var d1 = Math.hypot(ax.p1.x - self._cx, ax.p1.y - self._cy);
-      var d2 = Math.hypot(ax.p2.x - self._cx, ax.p2.y - self._cy);
 
       var lx, ly;
-      if (Math.min(d1, d2) > (self._R + rMid) / 2) {
-        // Vertex-through axis: pick the endpoint with smaller boundary index
-        // (the "positive" vertex) and place the label inside the polygon.
-        var idx1 = (j + 1)              % (2 * options.n);
-        var idx2 = (j + 1 + options.n)  % (2 * options.n);
-        var midPt = (idx1 < idx2) ? ax.p1 : ax.p2;
-        var scale = 0.84;
-        lx = (self._cx + (midPt.x - self._cx) * scale).toFixed(2);
-        ly = (self._cy + (midPt.y - self._cy) * scale).toFixed(2);
+      if (options.family === 'dihedral') {
+        // Pick the endpoint with the smaller boundary index modulo 2n. This
+        // is p1 for j = 0..n-2 and p2 for j = n-1 — so the "f" axis (j=n-1,
+        // endpoints at indices n and 0) gets its label at pt 0 (the top).
+        var idxA = (j + 1)              % (2 * options.n);
+        var idxB = (j + 1 + options.n)  % (2 * options.n);
+        var ptD  = (idxA < idxB) ? ax.p1 : ax.p2;
+        var scale = 1.2;
+        lx = (self._cx + (ptD.x - self._cx) * scale).toFixed(2);
+        ly = (self._cy + (ptD.y - self._cy) * scale).toFixed(2);
       } else {
-        // Edge-midpoint axis: outside polygon, past the closer endpoint.
-        var midPt2 = (d1 < d2) ? ax.p1 : ax.p2;
-        var scale  = 1.2;
-        lx = (self._cx + (midPt2.x - self._cx) * scale).toFixed(2);
-        ly = (self._cy + (midPt2.y - self._cy) * scale).toFixed(2);
+        var d1 = Math.hypot(ax.p1.x - self._cx, ax.p1.y - self._cy);
+        var d2 = Math.hypot(ax.p2.x - self._cx, ax.p2.y - self._cy);
+        if (Math.min(d1, d2) > (self._R + rMid) / 2) {
+          // Vertex-through axis: label inside, near the smaller-index vertex.
+          var idx1 = (j + 1)              % (2 * options.n);
+          var idx2 = (j + 1 + options.n)  % (2 * options.n);
+          var midPt = (idx1 < idx2) ? ax.p1 : ax.p2;
+          var scaleIn = 0.84;
+          lx = (self._cx + (midPt.x - self._cx) * scaleIn).toFixed(2);
+          ly = (self._cy + (midPt.y - self._cy) * scaleIn).toFixed(2);
+        } else {
+          // Edge-midpoint axis: outside polygon, past the closer endpoint.
+          var midPt2 = (d1 < d2) ? ax.p1 : ax.p2;
+          var scaleOut = 1.2;
+          lx = (self._cx + (midPt2.x - self._cx) * scaleOut).toFixed(2);
+          ly = (self._cy + (midPt2.y - self._cy) * scaleOut).toFixed(2);
+        }
       }
 
       var el = svgEl('text', {
@@ -343,7 +360,7 @@ Visualizer2D.prototype._build = function (container, W, H) {
         'font-size': Math.max(10, fontSize - 1), 'font-family': 'Georgia, serif',
         fill: COL.axisDefault, 'pointer-events': 'none', visibility: 'hidden'
       });
-      el.textContent = lbl;
+      applyLabel(el, lbl);
       axisLayer.appendChild(el);
       self._axisLabelEls.push(el);
     });

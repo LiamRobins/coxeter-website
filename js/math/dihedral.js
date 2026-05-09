@@ -29,8 +29,28 @@ function reflMat(theta) {
 
 // ── Element construction ──────────────────────────────────────────────────────
 // D_n has 2n elements:
-//   Rotations r_0 ... r_{n-1}  where r_k rotates by 2πk/n
-//   Reflections f_1 ... f_n    where f_k reflects across the axis at angle π(k-1)/n
+//   Rotations    e, r, r^2, ..., r^{n-1}     where r = rotation by 2π/n
+//   Reflections  f, rf, r^2 f, ..., r^{n-1} f
+// where f = reflection across the x-axis (angle 0), and r^j f reflects across
+// the axis at angle jπ/n (since R(α)·Refl(θ) = Refl(θ + α/2)).
+//
+// Internal storage order matches the original geometry:
+//   reflections[k]  (k = 0..n-1) is the reflection with axis at angle (k+1)π/n,
+//   i.e. labelled  r^{k+1} f  when k < n-1, and  f  when k = n-1
+//   (since r^n f = Refl(π) = Refl(0) = f).
+
+function rotLabel(k) {
+  if (k === 0) return 'e';
+  if (k === 1) return 'r';
+  return 'r^{' + k + '}';
+}
+
+// k = 1..n; matches the original f_k axis-angle convention (axis at kπ/n).
+function refLabel(k, n) {
+  if (k === n) return 'f';            // Refl(π) = Refl(0) = r^0 f
+  if (k === 1) return 'rf';
+  return 'r^{' + k + '}f';
+}
 
 function buildElements(n) {
   var elems = [];
@@ -38,7 +58,7 @@ function buildElements(n) {
     elems.push({
       type:   'rotation',
       k:      k,
-      label:  'r_{' + k + '}',
+      label:  rotLabel(k),
       matrix: rotMat(2 * Math.PI * k / n)
     });
   }
@@ -46,8 +66,8 @@ function buildElements(n) {
     elems.push({
       type:   'reflection',
       k:      k,
-      label:  'f_{' + k + '}',
-      matrix: reflMat(Math.PI * k / n)   // axis at kπ/n: f_k sits between r_{k-1} and r_k
+      label:  refLabel(k, n),
+      matrix: reflMat(Math.PI * k / n)
     });
   }
   return elems;
@@ -56,7 +76,7 @@ function buildElements(n) {
 function buildReflections(n) {
   var refs = [];
   for (var k = 1; k <= n; k++) {
-    refs.push({ label: 'f_{' + k + '}', matrix: reflMat(Math.PI * k / n) });
+    refs.push({ label: refLabel(k, n), matrix: reflMat(Math.PI * k / n) });
   }
   return refs;
 }
@@ -70,7 +90,7 @@ function DihedralGroup(n) {
 }
 
 // ── Coxeter length via BFS ────────────────────────────────────────────────────
-// Simple generators: s1 = f_1 (axis angle 0), s2 = f_2 (axis angle π/n).
+// Simple generators: s1 = f (axis angle 0), s2 = rf (axis angle π/n).
 
 DihedralGroup.prototype.computeLengths = function () {
   var elems = this.elements;
@@ -101,7 +121,7 @@ DihedralGroup.prototype.computeLengths = function () {
 };
 
 // ── Inversion set ─────────────────────────────────────────────────────────────
-// f_k ∈ Inv(g) iff ℓ(f_k · g) < ℓ(g).
+// reflection t ∈ Inv(g) iff ℓ(t · g) < ℓ(g).
 
 DihedralGroup.prototype.computeInversions = function () {
   var elems = this.elements;
@@ -221,9 +241,8 @@ DihedralGroup.prototype.matrixStrings = function (elemIdx) {
 };
 
 // ── Chamber sector assignment ─────────────────────────────────────────────────
-// Even sectors hold the n rotations (r_k in sector 2k);
-// odd sectors hold the n reflections (f_{k+1} in sector 2k+1).
-// This restores the original D_n layout.
+// Even sectors hold the n rotations  (rotation k in sector 2k);
+// odd sectors hold the n reflections (reflections[k] in sector 2k+1).
 
 DihedralGroup.prototype.sectorAssignment = function (n_poly) {
   var n = this.n;

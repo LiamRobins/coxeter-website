@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Group | Geometric Representations of Finite Coxeter Groups</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <h1 class="site-title">
+      <a href="index.html">Geometric Representations of Finite Coxeter Groups</a>
+    </h1>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="about-groups.html">About the Groups</a>
+      <a href="about-us.html">About Us</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- Group header — populated by group-page.js -->
+  <div class="group-page-header">
+    <h1 id="group-name">Loading&hellip;</h1>
+    <p class="group-subtitle" id="group-subtitle"></p>
+    <p class="group-iso"      id="group-iso"></p>
+  </div>
+
+  <!-- Controls -->
+  <div class="group-controls">
+    <button class="btn" id="btn-hyperplanes">Show Hyperplanes</button>
+    <div class="legend">
+      <span class="legend-item">
+        <span class="legend-swatch" style="background:var(--hl-selected-fill);outline:2px solid var(--hl-selected);outline-offset:-1px;border-radius:2px;"></span>
+        Selected
+      </span>
+      <span class="legend-item">
+        <span class="legend-swatch" style="background:var(--hl-reflection-fill);outline:2px solid var(--hl-reflection);outline-offset:-1px;border-radius:2px;"></span>
+        Reflections across inversion arrangement
+      </span>
+      <span class="legend-item">
+        <span class="legend-swatch" style="background:var(--hl-bruhat-fill);outline:2px solid var(--hl-bruhat);outline-offset:-1px;border-radius:2px;"></span>
+        Rest of Bruhat interval
+      </span>
+      <span class="legend-item">
+        <span class="legend-swatch" style="background:rgba(211,47,47,0.15);outline:2px solid var(--hl-hyperplane);outline-offset:-1px;border-radius:2px;"></span>
+        Inversion hyperplanes
+      </span>
+    </div>
+  </div>
+
+  <!-- Two-column workspace -->
+  <div class="group-workspace">
+
+    <div class="visualizer-panel" id="visualizer">
+      <div class="visualizer-placeholder">
+        Interactive visualization will appear here.
+      </div>
+    </div>
+
+    <div class="info-panel" id="info-panel">
+      <div class="info-empty" id="info-empty">
+        Click a chamber to see its information.
+      </div>
+      <div class="info-content" id="info-content">
+        <div class="info-section">
+          <div class="info-label">Element</div>
+          <div class="info-value" id="info-element"></div>
+        </div>
+        <div class="info-section">
+          <div class="info-label">Matrix</div>
+          <div class="info-value" id="info-matrix"></div>
+        </div>
+        <div class="info-section">
+          <div class="info-label">Length (distance from identity)</div>
+          <div class="info-value" id="info-length"></div>
+        </div>
+        <div class="info-section">
+          <div class="info-label">Inversion Arrangement</div>
+          <div class="info-value" id="info-inversions"></div>
+        </div>
+        <div class="info-section">
+          <div class="info-label">Bruhat Interval [e, w]</div>
+          <div class="bruhat-list" id="info-bruhat"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <!-- TODO: replace YOUR_EMAIL_HERE with your email address in both places below -->
+  <p>This website is incomplete, and there are plenty of Coxeter groups left to display!
+  If you see any errors, or want to contribute to this project, please reach out to
+  <a href="mailto:YOUR_EMAIL_HERE">YOUR_EMAIL_HERE</a>.</p>
+</footer>
+
+<!-- KaTeX (for math rendering in the info panel) -->
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+
+<!-- Three.js (used only by the 3D visualizer for S4 and B3) -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+<script src="js/groups.js"></script>
+<script src="js/math/dihedral.js"></script>
+<script src="js/math/symmetric.js"></script>
+<script src="js/math/hyperoctahedral.js"></script>
+<script src="js/visualizer-2d.js"></script>
+<script src="js/visualizer-3d.js"></script>
+<script src="js/group-page.js"></script>
+</body>
+</html>

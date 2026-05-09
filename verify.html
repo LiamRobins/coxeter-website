@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Math Verification</title>
+  <style>
+    body { font-family: monospace; font-size: 13px; padding: 1.5rem; background: #fafaf8; }
+    h2 { font-family: Georgia, serif; margin-top: 2rem; margin-bottom: 0.5rem; }
+    .error { color: red; font-weight: bold; }
+    table { border-collapse: collapse; margin-bottom: 1.5rem; font-size: 12px; }
+    th, td { border: 1px solid #ccc; padding: 4px 8px; text-align: left; }
+    th { background: #1c3d5a; color: white; }
+    tr:nth-child(even) { background: #f0f0ee; }
+  </style>
+</head>
+<body>
+<h1>Math Engine Verification</h1>
+<div id="output"></div>
+
+<script src="js/math/dihedral.js"></script>
+<script src="js/math/symmetric.js"></script>
+<script src="js/math/hyperoctahedral.js"></script>
+<script>
+const out = document.getElementById('output');
+
+// Convert \overline{k} in stored labels to an HTML overline span
+function ov(label) {
+  return label.replace(/\\overline\{(\w+)\}/g,
+    '<span style="text-decoration:overline">$1</span>');
+}
+
+function renderGroup(title, elements, getRow) {
+  let html = '<h2>' + title + ' &nbsp; (' + elements.length + ' elements)</h2>';
+  html += '<table><tr><th>Label</th><th>Length</th><th>Inversion set</th><th>Bruhat interval [e,w] &nbsp;(size)</th></tr>';
+  elements.forEach(function(e, i) {
+    const row = getRow(e, i);
+    html += '<tr><td>' + row.label + '</td><td>' + row.len + '</td><td>' + row.inv + '</td><td>' + row.bruhat + '</td></tr>';
+  });
+  html += '</table>';
+  out.innerHTML += html;
+}
+
+try {
+  // ── Dihedral ──
+  [3, 4, 5, 6, 7, 8].forEach(function(n) {
+    const G = new DihedralGroup(n).build();
+    renderGroup('D<sub>' + n + '</sub>', G.elements, function(e) {
+      const bruhatLabels = e.bruhatInterval.map(j => G.elements[j].label).join(', ');
+      return {
+        label:  e.label,
+        len:    e.length,
+        inv:    e.inversionSet.length === 0 ? '∅' :
+                  '{' + e.inversionSet.map(k => G.reflections[k].label).join(', ') + '}',
+        bruhat: '{' + bruhatLabels + '} (' + e.bruhatInterval.length + ')'
+      };
+    });
+  });
+
+  // ── Symmetric ──
+  [1, 2, 3, 4].forEach(function(n) {
+    const G = new SymmetricGroup(n).build();
+    renderGroup('S<sub>' + n + '</sub>', G.elements, function(e) {
+      const bruhatLabels = e.bruhatInterval.map(j => G.elements[j].label).join(', ');
+      return {
+        label:  e.label,
+        len:    e.length,
+        inv:    e.inversionSet.length === 0 ? '∅' :
+                  e.inversionSet.map(p => '' + p.i + p.j).join(', '),
+        bruhat: '{' + bruhatLabels + '} (' + e.bruhatInterval.length + ')'
+      };
+    });
+  });
+
+  // ── Hyperoctahedral ──
+  [1, 2, 3].forEach(function(n) {
+    const G = new HyperoctahedralGroup(n).build();
+    renderGroup('B<sub>' + n + '</sub>', G.elements, function(e) {
+      const bruhatLabels = e.bruhatInterval.map(j => ov(G.elements[j].label)).join(', ');
+      return {
+        label:  ov(e.label),
+        len:    e.length,
+        inv:    e.inversionSet.length === 0 ? '∅' :
+                  e.inversionSet.map(r => r.label).join(', '),
+        bruhat: '{' + bruhatLabels + '} (' + e.bruhatInterval.length + ')'
+      };
+    });
+  });
+
+} catch(err) {
+  out.innerHTML += '<p class="error">JavaScript error: ' + err.message + '<br>' + err.stack + '</p>';
+}
+</script>
+</body>
+</html>

@@ -326,8 +326,8 @@ Visualizer2D.prototype._build = function (container, W, H) {
       var lx, ly;
       if (options.family === 'dihedral') {
         // Pick the endpoint with the smaller boundary index modulo 2n. This
-        // is p1 for j = 0..n-2 and p2 for j = n-1 — so the "f" axis (j=n-1,
-        // endpoints at indices n and 0) gets its label at pt 0 (the top).
+        // is p1 for j = 0..n-2 and p2 for j = n-1 — the axis at angle π
+        // (endpoints at indices n and 0) thus gets its label at pt 0 (top).
         var idxA = (j + 1)              % (2 * options.n);
         var idxB = (j + 1 + options.n)  % (2 * options.n);
         var ptD  = (idxA < idxB) ? ax.p1 : ax.p2;

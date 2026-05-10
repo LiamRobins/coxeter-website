@@ -31,13 +31,13 @@ function reflMat(theta) {
 // D_n has 2n elements:
 //   Rotations    e, r, r^2, ..., r^{n-1}     where r = rotation by 2π/n
 //   Reflections  f, rf, r^2 f, ..., r^{n-1} f
-// where f = reflection across the x-axis (angle 0), and r^j f reflects across
-// the axis at angle jπ/n (since R(α)·Refl(θ) = Refl(θ + α/2)).
+// where f is the reflection whose chamber sits immediately CCW from e (i.e.
+// across the axis at angle π/n), and r^j f = R(2πj/n)·Refl(π/n) =
+// Refl((j+1)π/n) reflects across the axis at angle (j+1)π/n.
 //
-// Internal storage order matches the original geometry:
-//   reflections[k]  (k = 0..n-1) is the reflection with axis at angle (k+1)π/n,
-//   i.e. labelled  r^{k+1} f  when k < n-1, and  f  when k = n-1
-//   (since r^n f = Refl(π) = Refl(0) = f).
+// Internal storage order matches the geometry: reflections[k] (k = 0..n-1)
+// is the reflection across the axis at angle (k+1)π/n, labelled r^{k} f.
+// (refs[n-1] has axis (n)·π/n = π ≡ 0, labelled r^{n-1} f.)
 
 function rotLabel(k) {
   if (k === 0) return 'e';
@@ -45,11 +45,11 @@ function rotLabel(k) {
   return 'r^{' + k + '}';
 }
 
-// k = 1..n; matches the original f_k axis-angle convention (axis at kπ/n).
+// k = 1..n; refs[k-1] has axis at kπ/n and is labelled r^{k-1} f.
 function refLabel(k, n) {
-  if (k === n) return 'f';            // Refl(π) = Refl(0) = r^0 f
-  if (k === 1) return 'rf';
-  return 'r^{' + k + '}f';
+  if (k === 1) return 'f';
+  if (k === 2) return 'rf';
+  return 'r^{' + (k - 1) + '}f';
 }
 
 function buildElements(n) {
@@ -90,7 +90,7 @@ function DihedralGroup(n) {
 }
 
 // ── Coxeter length via BFS ────────────────────────────────────────────────────
-// Simple generators: s1 = f (axis angle 0), s2 = rf (axis angle π/n).
+// Simple generators: s1 = r^{n-1}f (axis angle 0), s2 = f (axis angle π/n).
 
 DihedralGroup.prototype.computeLengths = function () {
   var elems = this.elements;

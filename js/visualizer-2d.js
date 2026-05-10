@@ -325,15 +325,11 @@ Visualizer2D.prototype._build = function (container, W, H) {
 
       var lx, ly;
       if (options.family === 'dihedral') {
-        // Pick the endpoint with the smaller boundary index modulo 2n. This
-        // is p1 for j = 0..n-2 and p2 for j = n-1 — the axis at angle π
-        // (endpoints at indices n and 0) thus gets its label at pt 0 (top).
-        var idxA = (j + 1)              % (2 * options.n);
-        var idxB = (j + 1 + options.n)  % (2 * options.n);
-        var ptD  = (idxA < idxB) ? ax.p1 : ax.p2;
+        // Always use ax.p1 (boundary pt j+1) — this puts the j=n-1 axis
+        // (the horizontal one through pts n and 0) past pt n at the bottom.
         var scale = 1.2;
-        lx = (self._cx + (ptD.x - self._cx) * scale).toFixed(2);
-        ly = (self._cy + (ptD.y - self._cy) * scale).toFixed(2);
+        lx = (self._cx + (ax.p1.x - self._cx) * scale).toFixed(2);
+        ly = (self._cy + (ax.p1.y - self._cy) * scale).toFixed(2);
       } else {
         var d1 = Math.hypot(ax.p1.x - self._cx, ax.p1.y - self._cy);
         var d2 = Math.hypot(ax.p2.x - self._cx, ax.p2.y - self._cy);

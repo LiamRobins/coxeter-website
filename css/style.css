@@ -165,6 +165,7 @@ footer a:hover { color: white; }
 .group-subtitle { color: var(--muted); font-style: italic; margin-bottom: 0.35rem; font-size: 0.97rem; }
 .group-iso { font-size: 0.95rem; margin-bottom: 0; }
 .group-iso a { font-weight: 600; }
+.group-instruction { font-size: 0.97rem; margin-top: 0.6rem; margin-bottom: 0; }
 
 /* ===== Controls & Legend ===== */
 .group-controls {
@@ -298,6 +299,20 @@ footer a:hover { color: white; }
 /* ===== About Pages ===== */
 .about-content { max-width: 720px; }
 .about-content h2:first-child { margin-top: 0; }
+.about-content ul { margin: 0 0 1rem 1.5rem; }
+.about-content ul li { margin-bottom: 0.4rem; }
+.about-content h3 { font-style: italic; }
+.about-photo {
+  margin: 1.25rem 0 1.5rem;
+  text-align: center;
+}
+.about-photo img {
+  max-width: 260px;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
 .placeholder-block {
   background: #f2f2ef;
   border-left: 3px solid var(--border);

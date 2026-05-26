@@ -47,6 +47,9 @@ function inversionSetLatex(G, wIdx, family) {
   if (family === 'hyperoctahedral') {
     return invSet.map(function (r) { return r.label; }).join(', ');
   }
+  if (family === 'icosahedral') {
+    return invSet.map(function (r) { return r.label; }).join(', ');
+  }
   return '';
 }
 
@@ -65,6 +68,7 @@ function populateInfoColumn(G, elemIdx, config) {
   var family = config.family;
   var dim    = (family === 'dihedral') ? 2 :
                (family === 'symmetric') ? Math.max(1, config.n - 1) :
+               (family === 'icosahedral') ? 3 :
                config.n; // hyperoctahedral
 
   // Element label
@@ -101,10 +105,11 @@ function populateHeader(config) {
   document.getElementById('group-subtitle').textContent =
     'corresponding to the reflective chambers of a ' + config.polytope;
 
-  // Isomorphisms
+  // Isomorphisms (iso.id === null → render label without a link)
   var isoEl = document.getElementById('group-iso');
   if (config.iso && config.iso.length > 0) {
     var links = config.iso.map(function (iso) {
+      if (iso.id === null) return renderKaTeX(iso.label);
       return '<a href="group.html?g=' + iso.id + '">' + renderKaTeX(iso.label) + '</a>';
     }).join(', ');
     isoEl.innerHTML = 'Isomorphic to: ' + links;
@@ -157,6 +162,8 @@ document.addEventListener('DOMContentLoaded', function () {
     G = new DihedralGroup(n).build();
   } else if (config.family === 'symmetric') {
     G = new SymmetricGroup(n).build();
+  } else if (config.family === 'icosahedral') {
+    G = new IcosahedralGroup().build();
   } else {
     G = new HyperoctahedralGroup(n).build();
   }
@@ -199,6 +206,12 @@ document.addEventListener('DOMContentLoaded', function () {
   } else if (config.family === 'hyperoctahedral' && n === 3 && config.polytope === 'cube') {
     // B_3 visualised as the cube
     viz = new Visualizer3DCube(vizContainer, G, { family: 'hyperoctahedral', n: n });
+  } else if (config.family === 'icosahedral' && config.polytope === 'icosahedron') {
+    // H_3 visualised as the icosahedron
+    viz = new Visualizer3DIcosahedron(vizContainer, G, { family: 'icosahedral' });
+  } else if (config.family === 'icosahedral' && config.polytope === 'dodecahedron') {
+    // H_3 visualised as the dual dodecahedron
+    viz = new Visualizer3DDodecahedron(vizContainer, G, { family: 'icosahedral' });
   } else if (config.family === 'hyperoctahedral' && n === 2) {
     // B_2 cross-polytope: vertices ±1, ±2 in CCW order +1, +2, −1, −2
     viz = new Visualizer2D(vizContainer, G, {

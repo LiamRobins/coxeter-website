@@ -20,12 +20,15 @@
 <script src="js/math/dihedral.js"></script>
 <script src="js/math/symmetric.js"></script>
 <script src="js/math/hyperoctahedral.js"></script>
+<script src="js/math/icosahedral.js"></script>
 <script>
 const out = document.getElementById('output');
 
-// Convert \overline{k} in stored labels to an HTML overline span
+// Convert \overline{...} in stored labels to an HTML overline span. The content
+// can contain any non-brace characters (digits, parens, commas — needed for
+// H_3 reflection labels like \overline{(12)(34)}).
 function ov(label) {
-  return label.replace(/\\overline\{(\w+)\}/g,
+  return label.replace(/\\overline\{([^{}]+)\}/g,
     '<span style="text-decoration:overline">$1</span>');
 }
 
@@ -85,6 +88,21 @@ try {
       };
     });
   });
+
+  // ── Icosahedral (H_3) ──
+  {
+    const G = new IcosahedralGroup().build();
+    renderGroup('H<sub>3</sub>', G.elements, function(e) {
+      const bruhatLabels = e.bruhatInterval.map(j => ov(G.elements[j].label)).join(', ');
+      return {
+        label:  ov(e.label),
+        len:    e.length,
+        inv:    e.inversionSet.length === 0 ? '∅' :
+                  e.inversionSet.map(r => ov(r.label)).join(', '),
+        bruhat: '{' + bruhatLabels + '} (' + e.bruhatInterval.length + ')'
+      };
+    });
+  }
 
 } catch(err) {
   out.innerHTML += '<p class="error">JavaScript error: ' + err.message + '<br>' + err.stack + '</p>';

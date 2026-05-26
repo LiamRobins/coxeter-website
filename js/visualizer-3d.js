@@ -1059,4 +1059,548 @@ Visualizer3DCube.prototype.toggleAxes            = Visualizer3D.prototype.toggle
 
 window.Visualizer3DCube = Visualizer3DCube;
 
+// ═════════════════════════════════════════════════════════════════════════════
+// ═══ ICOSAHEDRON (H_3) ══════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// 12 vertices = cyclic perms of (0, ±1, ±φ), normalized to the unit sphere.
+// 30 edges between vertices at squared distance 4 in the unnormalized form.
+// 20 triangular faces. 120 chambers (6 per face), one per H_3 element.
+//
+// Each chamber w is the triangle (V_w, M_w, C_w) = M(w) · (V_0, M_0, C_0),
+// where M(w) is the element's stored 3D matrix and (V_0, M_0, C_0) is the
+// fundamental chamber (vertex, edge midpoint, face centroid).
+
+var ICO_PHI = (1 + Math.sqrt(5)) / 2;
+var ICO_RAW_R = Math.sqrt(1 + ICO_PHI * ICO_PHI);   // circumradius in raw coords
+var ICO_SCALE = 1 / ICO_RAW_R;                       // normalize to unit sphere
+
+function icoVerticesRaw() {
+  var P = ICO_PHI;
+  return [
+    [ 0,  1,  P], [ 0,  1, -P], [ 0, -1,  P], [ 0, -1, -P],
+    [ 1,  P,  0], [ 1, -P,  0], [-1,  P,  0], [-1, -P,  0],
+    [ P,  0,  1], [ P,  0, -1], [-P,  0,  1], [-P,  0, -1],
+  ];
+}
+
+function icoEdgesRaw() {
+  // 30 edges: pairs of icosahedron vertices at squared distance 4.
+  var V = icoVerticesRaw();
+  var pairs = [];
+  for (var i = 0; i < V.length; i++) {
+    for (var j = i + 1; j < V.length; j++) {
+      var d2 = (V[i][0]-V[j][0])**2 + (V[i][1]-V[j][1])**2 + (V[i][2]-V[j][2])**2;
+      if (Math.abs(d2 - 4) < 1e-6) pairs.push([V[i], V[j]]);
+    }
+  }
+  return pairs;
+}
+
+function applyMatToVec(M, v) {
+  return new THREE.Vector3(
+    M[0]*v[0] + M[1]*v[1] + M[2]*v[2],
+    M[3]*v[0] + M[4]*v[1] + M[5]*v[2],
+    M[6]*v[0] + M[7]*v[1] + M[8]*v[2]
+  );
+}
+
+// ─── Visualizer3DIcosahedron ─────────────────────────────────────────────────
+function Visualizer3DIcosahedron(container, G, options) {
+  this.G        = G;
+  this.options  = options || {};
+  this.onSelect = null;
+
+  this._selected      = null;
+  this._showAxes      = false;
+  this._chamberMeshes = [];
+  this._planeMeshes   = [];
+  this._planeLabels   = [];
+
+  var W = container.clientWidth || 520;
+  var H = W;
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xfafaf8);
+
+  this._camera   = new THREE.PerspectiveCamera(40, W / H, 0.1, 100);
+  this._camTheta = Math.PI * 0.55;
+  this._camPhi   = Math.PI * 0.32;
+  this._camDist  = 2.9;       // closer than 4.2 → icosahedron fills the box
+  this._updateCamera();
+
+  var renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  container.appendChild(renderer.domElement);
+  this._renderer = renderer;
+  this._canvas   = renderer.domElement;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+  var dir = new THREE.DirectionalLight(0xffffff, 0.4);
+  dir.position.set(2, 3, 4);
+  scene.add(dir);
+  this._scene = scene;
+
+  // Pre-rotate the icosahedron so that:
+  //   - Face F_0's outward normal (1,1,1)/√3 aligns with the default camera direction
+  //   - V_0 = (0, 1, φ) projects to the top of the view plane
+  // This places the 6 chambers of the S_3-subgroup ⟨s_2, s_3⟩ on F_0 in the
+  // S_3-standard layout: identity at top-left, V_0 at top vertex, V_NEXT and
+  // V_FACE at bottom-left / bottom-right.
+  this._rotationGroup = new THREE.Group();
+  this._rotationGroup.quaternion.copy(this._computeS3Rotation());
+  scene.add(this._rotationGroup);
+
+  // Reference vector used to orient chamber labels right-side up in the post-Q
+  // view. In world coords screen-up = (0,1,0); we need its preimage Q⁻¹·(0,1,0)
+  // in the group's local frame so that, after Q is applied, the label's "up"
+  // ends up along world (0,1,0)'s projection onto each face plane.
+  var qInv = this._rotationGroup.quaternion.clone().invert();
+  this._labelUpRef = new THREE.Vector3(0, 1, 0).applyQuaternion(qInv);
+
+  this._buildChambers();
+  this._buildEdges();
+  this._buildPlanes();
+
+  this._setupOrbitControls();
+  this._setupRaycaster();
+
+  this._render();
+}
+
+// Compute the quaternion that puts the fundamental face flat-on with V_0 at top.
+Visualizer3DIcosahedron.prototype._computeS3Rotation = function () {
+  // Default camera direction (from origin → camera position).
+  var camDir = new THREE.Vector3(
+    Math.sin(this._camPhi) * Math.cos(this._camTheta),
+    Math.cos(this._camPhi),
+    Math.sin(this._camPhi) * Math.sin(this._camTheta)
+  ).normalize();
+
+  // Step 1: rotate (1,1,1)/√3 → camDir.
+  var a = new THREE.Vector3(1, 1, 1).normalize();
+  var q1 = new THREE.Quaternion().setFromUnitVectors(a, camDir);
+
+  // Apply q1 to V_0 = (0, 1, φ), project the result onto the view plane.
+  var v0 = new THREE.Vector3(0, 1, ICO_PHI).applyQuaternion(q1);
+  var v0_perp = v0.clone().addScaledVector(camDir, -camDir.dot(v0)).normalize();
+
+  // World up projected onto the view plane = the desired "screen up" direction.
+  var worldUp = new THREE.Vector3(0, 1, 0);
+  var viewUp = worldUp.clone().addScaledVector(camDir, -camDir.dot(worldUp)).normalize();
+
+  // Step 2: roll around camDir to send v0_perp → viewUp.
+  var cosA = v0_perp.dot(viewUp);
+  var sinA = new THREE.Vector3().crossVectors(v0_perp, viewUp).dot(camDir);
+  var roll = Math.atan2(sinA, cosA);
+  var q2 = new THREE.Quaternion().setFromAxisAngle(camDir, roll);
+
+  return q2.multiply(q1);
+};
+
+// ── Chambers ────────────────────────────────────────────────────────────────
+//
+// Each element w has 3 corners on the icosahedron surface: M(w)·V_0,
+// M(w)·M_0, M(w)·C_0. All multiplied by ICO_SCALE to normalize.
+
+Visualizer3DIcosahedron.prototype._buildChambers = function () {
+  var self = this;
+  var fund = this.G.fundamental;
+  this.G.elements.forEach(function (elem, idx) {
+    var v3 = applyMatToVec(elem.matrix, fund.V).multiplyScalar(ICO_SCALE);
+    var m3 = applyMatToVec(elem.matrix, fund.M).multiplyScalar(ICO_SCALE);
+    var c3 = applyMatToVec(elem.matrix, fund.C).multiplyScalar(ICO_SCALE);
+    var pts = [v3, m3, c3];
+
+    var geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      pts[0].x, pts[0].y, pts[0].z,
+      pts[1].x, pts[1].y, pts[1].z,
+      pts[2].x, pts[2].y, pts[2].z,
+    ]), 3));
+    geom.computeVertexNormals();
+
+    var mat = new THREE.MeshLambertMaterial({
+      color: COL.chamberDefault,
+      side:  THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits:  1,
+    });
+    var mesh = new THREE.Mesh(geom, mat);
+    mesh.userData.elemIdx = idx;
+    self._rotationGroup.add(mesh);
+    self._chamberMeshes[idx] = mesh;
+
+    // Chamber-triangle outline
+    var lineGeom = new THREE.BufferGeometry();
+    lineGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      pts[0].x, pts[0].y, pts[0].z,  pts[1].x, pts[1].y, pts[1].z,
+      pts[1].x, pts[1].y, pts[1].z,  pts[2].x, pts[2].y, pts[2].z,
+      pts[2].x, pts[2].y, pts[2].z,  pts[0].x, pts[0].y, pts[0].z,
+    ]), 3));
+    var lines = new THREE.LineSegments(lineGeom,
+      new THREE.LineBasicMaterial({ color: COL.edge }));
+    self._rotationGroup.add(lines);
+
+    self._addIcoChamberLabel(elem, pts, c3);
+  });
+};
+
+Visualizer3DIcosahedron.prototype._addIcoChamberLabel = function (elem, triPts, faceCenterVec) {
+  var c = centroid3(triPts[0], triPts[1], triPts[2]);
+  // Face centroid direction = outward face normal of the icosahedron face.
+  var faceNormal = faceCenterVec.clone().normalize();
+
+  // Use Q⁻¹·world-up (in the group's local frame) so the label ends up
+  // right-side up after the rotation group's Q is applied.
+  var worldUp = this._labelUpRef;
+  var inPlaneUp = worldUp.clone().sub(
+    faceNormal.clone().multiplyScalar(worldUp.dot(faceNormal))
+  );
+  if (inPlaneUp.lengthSq() < 0.01) {
+    inPlaneUp = new THREE.Vector3(1, 0, 0).sub(
+      faceNormal.clone().multiplyScalar(faceNormal.dot(new THREE.Vector3(1, 0, 0)))
+    );
+  }
+  inPlaneUp.normalize();
+  var inPlaneRight = new THREE.Vector3().crossVectors(inPlaneUp, faceNormal).normalize();
+
+  var size = 0.14;
+  var canvas = makeBnLabelCanvas(elem.label, { size: 384, fontPx: 96, color: '#1c3d5a' });
+  var tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  var planeMat = new THREE.MeshBasicMaterial({
+    map: tex, transparent: true, depthWrite: false,
+  });
+  var plane = new THREE.Mesh(new THREE.PlaneGeometry(size, size), planeMat);
+
+  plane.position.copy(c).add(faceNormal.clone().multiplyScalar(0.003));
+  var basis = new THREE.Matrix4().makeBasis(inPlaneRight, inPlaneUp, faceNormal);
+  plane.setRotationFromMatrix(basis);
+  plane.renderOrder = 5;
+
+  this._rotationGroup.add(plane);
+};
+
+// ── Icosahedron wireframe edges ──────────────────────────────────────────────
+Visualizer3DIcosahedron.prototype._buildEdges = function () {
+  var positions = [];
+  icoEdgesRaw().forEach(function (e) {
+    positions.push(e[0][0]*ICO_SCALE, e[0][1]*ICO_SCALE, e[0][2]*ICO_SCALE,
+                   e[1][0]*ICO_SCALE, e[1][1]*ICO_SCALE, e[1][2]*ICO_SCALE);
+  });
+  var geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+  this._rotationGroup.add(new THREE.LineSegments(geom,
+    new THREE.LineBasicMaterial({ color: COL.edge })));
+};
+
+// ── 15 reflection planes, one per H_3 reflection ────────────────────────────
+Visualizer3DIcosahedron.prototype._buildPlanes = function () {
+  var self = this;
+  this.G.reflections.forEach(function (r, axisIdx) {
+    var n = new THREE.Vector3(r.normal[0], r.normal[1], r.normal[2]).normalize();
+    var helper = (Math.abs(n.y) > 0.9)
+      ? new THREE.Vector3(1, 0, 0)
+      : new THREE.Vector3(0, 1, 0);
+    var u = new THREE.Vector3().crossVectors(helper, n).normalize();
+    var v = new THREE.Vector3().crossVectors(n, u).normalize();
+
+    var L = 1.3;
+    var pA = new THREE.Vector3().addScaledVector(u, -L).addScaledVector(v, -L);
+    var pB = new THREE.Vector3().addScaledVector(u,  L).addScaledVector(v, -L);
+    var pC = new THREE.Vector3().addScaledVector(u,  L).addScaledVector(v,  L);
+    var pD = new THREE.Vector3().addScaledVector(u, -L).addScaledVector(v,  L);
+
+    var geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      pA.x, pA.y, pA.z, pB.x, pB.y, pB.z, pC.x, pC.y, pC.z,
+      pA.x, pA.y, pA.z, pC.x, pC.y, pC.z, pD.x, pD.y, pD.z,
+    ]), 3));
+    geom.computeVertexNormals();
+
+    var mat = new THREE.MeshBasicMaterial({
+      color: COL.axisRed, transparent: true, opacity: 0.5,
+      side: THREE.DoubleSide, depthWrite: false,
+    });
+    var mesh = new THREE.Mesh(geom, mat);
+    mesh.visible = false;
+    mesh.userData.isHyperplane = true;
+    self._rotationGroup.add(mesh);
+    self._planeMeshes[axisIdx] = mesh;
+
+    // Label position: point on the plane near the top (max +y projection).
+    var topInPlane = (Math.abs(u.y) > Math.abs(v.y))
+      ? (u.y > 0 ? u.clone() : u.clone().negate())
+      : (v.y > 0 ? v.clone() : v.clone().negate());
+    var labelPos = topInPlane.multiplyScalar(1.25);
+
+    // Render reflection label "(ab)(cd)" with overline canvas helper.
+    var canvas = makeBnLabelCanvas(r.label, { size: 384, fontPx: 80, color: '#d32f2f' });
+    var tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
+    var spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+    var sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(0.4, 0.4, 1);
+    sprite.position.copy(labelPos);
+    sprite.renderOrder = 999;
+    sprite.visible = false;
+    self._rotationGroup.add(sprite);
+    self._planeLabels[axisIdx] = sprite;
+  });
+};
+
+// Share scaffolding methods with Visualizer3D
+Visualizer3DIcosahedron.prototype._updateCamera         = Visualizer3D.prototype._updateCamera;
+Visualizer3DIcosahedron.prototype._render               = Visualizer3D.prototype._render;
+Visualizer3DIcosahedron.prototype._setupOrbitControls   = Visualizer3D.prototype._setupOrbitControls;
+Visualizer3DIcosahedron.prototype._setupRaycaster       = Visualizer3D.prototype._setupRaycaster;
+Visualizer3DIcosahedron.prototype._select               = Visualizer3D.prototype._select;
+Visualizer3DIcosahedron.prototype._applyHighlights      = Visualizer3D.prototype._applyHighlights;
+Visualizer3DIcosahedron.prototype._updatePlaneVisibility = Visualizer3D.prototype._updatePlaneVisibility;
+Visualizer3DIcosahedron.prototype.toggleAxes            = Visualizer3D.prototype.toggleAxes;
+
+window.Visualizer3DIcosahedron = Visualizer3DIcosahedron;
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ═══ DODECAHEDRON (H_3) ═════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// Dual of the icosahedron. 20 vertices, 30 edges, 12 pentagonal faces, 120
+// chambers (10 per face). Uses the SAME H_3 element matrices as the icosa —
+// only the polytope geometry differs.
+//
+// Vertex coords (raw, before unit-circumradius scaling by 1/√3):
+//   - 8 cube vertices: (±1, ±1, ±1)
+//   - 12 chiral (odd-perm) vertices: cyclic perms of (0, ±φ, ±1/φ)
+// This chirality is the dual of the standard icosahedron (cyclic perms of
+// (0, ±1, ±φ)). All 20 raw vertices have magnitude √3.
+//
+// Fundamental chamber by duality:
+//   - V'_0 = dodeca FACE CENTER  at direction of icosa V_0     (= (0,1,φ))
+//   - M'_0 = dodeca EDGE MIDPOINT at direction of icosa M_0
+//   - C'_0 = dodeca VERTEX       at direction of icosa C_0     (= (1,1,1))
+// ("vertex" ↔ "face center" swap is the polytope-dual relationship.)
+
+var DODECA_SCALE = 1 / Math.sqrt(3);                          // raw → unit circumradius
+var DODECA_IR    = Math.sqrt((3 + 4 * ICO_PHI) / 15);          // inradius (scaled)
+var DODECA_EM    = ICO_PHI / Math.sqrt(3);                     // edge midpoint radius (scaled)
+
+function dodecaVerticesRaw() {
+  var P = ICO_PHI, IP = 1 / P;
+  var verts = [];
+  for (var a = -1; a <= 1; a += 2)
+    for (var b = -1; b <= 1; b += 2)
+      for (var c = -1; c <= 1; c += 2)
+        verts.push([a, b, c]);
+  for (var sa = -1; sa <= 1; sa += 2)
+    for (var sb = -1; sb <= 1; sb += 2) {
+      verts.push([0,     sa * P,  sb * IP]);
+      verts.push([sa * P, sb * IP, 0     ]);
+      verts.push([sb * IP, 0,     sa * P ]);
+    }
+  return verts;
+}
+
+function dodecaEdgesRaw() {
+  // 30 edges: pairs of dodecahedron vertices at squared distance 4/φ² (raw).
+  var V = dodecaVerticesRaw();
+  var EL2 = 4 / (ICO_PHI * ICO_PHI);
+  var pairs = [];
+  for (var i = 0; i < V.length; i++) {
+    for (var j = i + 1; j < V.length; j++) {
+      var d2 = (V[i][0]-V[j][0])**2 + (V[i][1]-V[j][1])**2 + (V[i][2]-V[j][2])**2;
+      if (Math.abs(d2 - EL2) < 1e-6) pairs.push([V[i], V[j]]);
+    }
+  }
+  return pairs;
+}
+
+// Unit direction times radius — used to position chamber corners.
+function pointAt(v, radius) {
+  var len = Math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+  var s = radius / len;
+  return new THREE.Vector3(v[0]*s, v[1]*s, v[2]*s);
+}
+
+// ─── Visualizer3DDodecahedron ────────────────────────────────────────────────
+function Visualizer3DDodecahedron(container, G, options) {
+  this.G        = G;
+  this.options  = options || {};
+  this.onSelect = null;
+
+  this._selected      = null;
+  this._showAxes      = false;
+  this._chamberMeshes = [];
+  this._planeMeshes   = [];
+  this._planeLabels   = [];
+
+  var W = container.clientWidth || 520;
+  var H = W;
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xfafaf8);
+
+  this._camera   = new THREE.PerspectiveCamera(40, W / H, 0.1, 100);
+  this._camTheta = Math.PI * 0.55;
+  this._camPhi   = Math.PI * 0.32;
+  this._camDist  = 2.9;
+  this._updateCamera();
+
+  var renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  container.appendChild(renderer.domElement);
+  this._renderer = renderer;
+  this._canvas   = renderer.domElement;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+  var dirLight = new THREE.DirectionalLight(0xffffff, 0.4);
+  dirLight.position.set(2, 3, 4);
+  scene.add(dirLight);
+  this._scene = scene;
+
+  // Same Q rotation as the icosahedron: keeps the C_0 direction (1,1,1)/√3
+  // pointing at the camera. The dodeca vertex C'_0 lands at front-center, and
+  // the 6 chambers of ⟨s_2, s_3⟩ form a hexagonal cluster around it.
+  this._rotationGroup = new THREE.Group();
+  this._rotationGroup.quaternion.copy(
+    Visualizer3DIcosahedron.prototype._computeS3Rotation.call(this)
+  );
+  scene.add(this._rotationGroup);
+
+  var qInv = this._rotationGroup.quaternion.clone().invert();
+  this._labelUpRef = new THREE.Vector3(0, 1, 0).applyQuaternion(qInv);
+
+  // Compute fundamental dodeca chamber corners from the icosa fundamental directions.
+  var fund = G.fundamental;
+  this._fundDodeca = {
+    V: pointAt(fund.V, DODECA_IR),   // dodeca face center  (was icosa vertex)
+    M: pointAt(fund.M, DODECA_EM),   // dodeca edge midpoint
+    C: pointAt(fund.C, 1),            // dodeca vertex (was icosa face centroid)
+  };
+
+  this._buildChambers();
+  this._buildEdges();
+  this._buildPlanes();
+
+  this._setupOrbitControls();
+  this._setupRaycaster();
+
+  this._render();
+}
+
+// Chambers: each element w has triangle ( M(w)·V'_0,  M(w)·M'_0,  M(w)·C'_0 ).
+// The triangle sits on the dodeca face at direction M(w)·V'_0.
+Visualizer3DDodecahedron.prototype._buildChambers = function () {
+  var self = this;
+  var fund = this._fundDodeca;
+  var fV = [fund.V.x, fund.V.y, fund.V.z];
+  var fM = [fund.M.x, fund.M.y, fund.M.z];
+  var fC = [fund.C.x, fund.C.y, fund.C.z];
+
+  this.G.elements.forEach(function (elem, idx) {
+    var v = applyMatToVec(elem.matrix, fV);
+    var m = applyMatToVec(elem.matrix, fM);
+    var c = applyMatToVec(elem.matrix, fC);
+    var pts = [v, m, c];
+
+    var geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      pts[0].x, pts[0].y, pts[0].z,
+      pts[1].x, pts[1].y, pts[1].z,
+      pts[2].x, pts[2].y, pts[2].z,
+    ]), 3));
+    geom.computeVertexNormals();
+
+    var mat = new THREE.MeshLambertMaterial({
+      color: COL.chamberDefault,
+      side:  THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits:  1,
+    });
+    var mesh = new THREE.Mesh(geom, mat);
+    mesh.userData.elemIdx = idx;
+    self._rotationGroup.add(mesh);
+    self._chamberMeshes[idx] = mesh;
+
+    var lineGeom = new THREE.BufferGeometry();
+    lineGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      pts[0].x, pts[0].y, pts[0].z,  pts[1].x, pts[1].y, pts[1].z,
+      pts[1].x, pts[1].y, pts[1].z,  pts[2].x, pts[2].y, pts[2].z,
+      pts[2].x, pts[2].y, pts[2].z,  pts[0].x, pts[0].y, pts[0].z,
+    ]), 3));
+    var lines = new THREE.LineSegments(lineGeom,
+      new THREE.LineBasicMaterial({ color: COL.edge }));
+    self._rotationGroup.add(lines);
+
+    // The face containing this chamber has outward normal = direction of v
+    // (= M(w)·V'_0, the dodeca face center for this chamber's face).
+    self._addDodecaChamberLabel(elem, pts, v);
+  });
+};
+
+Visualizer3DDodecahedron.prototype._addDodecaChamberLabel = function (elem, triPts, faceCenterVec) {
+  var c = centroid3(triPts[0], triPts[1], triPts[2]);
+  var faceNormal = faceCenterVec.clone().normalize();
+
+  var worldUp = this._labelUpRef;
+  var inPlaneUp = worldUp.clone().sub(
+    faceNormal.clone().multiplyScalar(worldUp.dot(faceNormal))
+  );
+  if (inPlaneUp.lengthSq() < 0.01) {
+    inPlaneUp = new THREE.Vector3(1, 0, 0).sub(
+      faceNormal.clone().multiplyScalar(faceNormal.dot(new THREE.Vector3(1, 0, 0)))
+    );
+  }
+  inPlaneUp.normalize();
+  var inPlaneRight = new THREE.Vector3().crossVectors(inPlaneUp, faceNormal).normalize();
+
+  var size = 0.14;
+  var canvas = makeBnLabelCanvas(elem.label, { size: 384, fontPx: 96, color: '#1c3d5a' });
+  var tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  var planeMat = new THREE.MeshBasicMaterial({
+    map: tex, transparent: true, depthWrite: false,
+  });
+  var plane = new THREE.Mesh(new THREE.PlaneGeometry(size, size), planeMat);
+
+  plane.position.copy(c).add(faceNormal.clone().multiplyScalar(0.003));
+  var basis = new THREE.Matrix4().makeBasis(inPlaneRight, inPlaneUp, faceNormal);
+  plane.setRotationFromMatrix(basis);
+  plane.renderOrder = 5;
+
+  this._rotationGroup.add(plane);
+};
+
+Visualizer3DDodecahedron.prototype._buildEdges = function () {
+  var positions = [];
+  dodecaEdgesRaw().forEach(function (e) {
+    positions.push(e[0][0]*DODECA_SCALE, e[0][1]*DODECA_SCALE, e[0][2]*DODECA_SCALE,
+                   e[1][0]*DODECA_SCALE, e[1][1]*DODECA_SCALE, e[1][2]*DODECA_SCALE);
+  });
+  var geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+  this._rotationGroup.add(new THREE.LineSegments(geom,
+    new THREE.LineBasicMaterial({ color: COL.edge })));
+};
+
+// Reflection planes and all other scaffolding identical to the icosahedron.
+Visualizer3DDodecahedron.prototype._buildPlanes         = Visualizer3DIcosahedron.prototype._buildPlanes;
+Visualizer3DDodecahedron.prototype._updateCamera        = Visualizer3D.prototype._updateCamera;
+Visualizer3DDodecahedron.prototype._render              = Visualizer3D.prototype._render;
+Visualizer3DDodecahedron.prototype._setupOrbitControls  = Visualizer3D.prototype._setupOrbitControls;
+Visualizer3DDodecahedron.prototype._setupRaycaster      = Visualizer3D.prototype._setupRaycaster;
+Visualizer3DDodecahedron.prototype._select              = Visualizer3D.prototype._select;
+Visualizer3DDodecahedron.prototype._applyHighlights     = Visualizer3D.prototype._applyHighlights;
+Visualizer3DDodecahedron.prototype._updatePlaneVisibility = Visualizer3D.prototype._updatePlaneVisibility;
+Visualizer3DDodecahedron.prototype.toggleAxes           = Visualizer3D.prototype.toggleAxes;
+
+window.Visualizer3DDodecahedron = Visualizer3DDodecahedron;
+
 })();

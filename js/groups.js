@@ -40,4 +40,13 @@ var GROUPS = {
   // Same math group as B_3, but visualised as the dual (octahedron) instead of the cube.
   B3oct: { name: 'B_3', family: 'hyperoctahedral', n: 3, polytope: 'octahedron',
         iso: [] },
+
+  // ── Exceptional (Icosahedral) ─────────────────────────────────────────────
+  // H_3 ≅ A_5 × Z_2, symmetry group of the icosahedron / dodecahedron.
+  H3ico: { name: 'H_3', family: 'icosahedral', n: 3, polytope: 'icosahedron',
+        iso: [{ label: 'A_5 \\times \\mathbb{Z}_2', id: null }] },
+
+  // Same math group as H_3, but visualised as the dual dodecahedron.
+  H3dod: { name: 'H_3', family: 'icosahedral', n: 3, polytope: 'dodecahedron',
+        iso: [{ label: 'A_5 \\times \\mathbb{Z}_2', id: null }] },
 };
